@@ -1,8 +1,12 @@
 import React, {useState, useEffect} from "react";
-import {StyleSheet, View, Button, Image, Dimensions, TouchableOpacity, AsyncStorage} from 'react-native';
+import {useRecoilState} from 'recoil';
+import {StyleSheet, View, Button, Image, Dimensions, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import {favImageIdListState} from "../atoms/favImageIdListState";
+import {updateFavImageIdFromStorage} from "../storage";
 
 export default function Discover({ navigation }) {
+    const [favImageIdList, setFavImageIdList] = useRecoilState(favImageIdListState);
     const [currentImageUrl, setImageUrl] = useState(null);
     const [currentImageFavStatus, setImageFavStatus] = useState(false);
 
@@ -10,25 +14,21 @@ export default function Discover({ navigation }) {
     let lastTimeImagePress = null;
 
     useEffect(() => {
-        // Se ejecuta cuando se monta el componente
         loadRandomImage();
     }, []);
 
-    /**
-     * Se ejecuta cuando se presiona el botón "Descubrir nueva" y cuando se abre la app por primera vez
-     */
+    const getImageIdFromUrl = (url) => {
+        const urlParts = url.split("/");
+        return  urlParts[4];
+    }
+
     const loadRandomImage = () => {
         const width = Math.floor(Dimensions.get('window').width);
         const height = Math.floor(Dimensions.get('window').height);
         fetch('https://picsum.photos/' + width + '/' + height)
         .then(async function (response){
-            // guardamos en el state la url de la foto random
             setImageUrl(response.url);
-
-            // Hay que determinar si la imagen ya es favorita
-            const favImagesJSONStr = await AsyncStorage.getItem('@favImagesJSON', ()=>{});
-            const favImagesJSON = JSON.parse(favImagesJSONStr);
-            const randomImageFavStatus = favImagesJSON !== null && favImagesJSON.urls.includes(response.url);
+            const randomImageFavStatus = favImageIdList.includes( getImageIdFromUrl(response.url) );
             if (randomImageFavStatus !== currentImageFavStatus) {
                 setImageFavStatus(randomImageFavStatus);
             }
@@ -37,7 +37,6 @@ export default function Discover({ navigation }) {
 
     const imageTap = () => {
         const now = new Date().getTime();
-
         if (lastTimeImagePress !== null && (now - lastTimeImagePress) < DOUBLE_PRESS_DELAY) {
             lastTimeImagePress = null;
             toggleImageFavStatus().then(() => {});
@@ -48,30 +47,10 @@ export default function Discover({ navigation }) {
 
     const toggleImageFavStatus = async () => {
         const newFavStatus = !currentImageFavStatus;
-
-        const favImagesJSONStr = await AsyncStorage.getItem('@favImagesJSON', ()=>{});
-        let favImagesJSON = JSON.parse(favImagesJSONStr);
-        if (favImagesJSON === null) {
-            favImagesJSON = {
-                urls: []
-            };
-        }
-
-        if (newFavStatus) {
-            // Agregar img al storage
-            favImagesJSON.urls.push(currentImageUrl);
-        } else {
-            // Eliminar img del storage
-            favImagesJSON.urls = favImagesJSON.urls.filter((value) => { return value !== currentImageUrl});
-        }
-
-        await AsyncStorage.setItem('@favImagesJSON', JSON.stringify(favImagesJSON), ()=>{});
+        updateFavImageIdFromStorage(getImageIdFromUrl(currentImageUrl), newFavStatus).then( r => setFavImageIdList(r));
         setImageFavStatus(newFavStatus);
     }
 
-    /**
-     * El arbol de componentes que se devuelva, será renderizado cuando se invoque al componente
-     */
     return (
         <View style={styles.main}>
             <TouchableOpacity onPress={imageTap} style={styles.touchableOpacity}>
